@@ -45,12 +45,8 @@ cacd-analyzer meu-vault/ -t taxonomia_cacd.yaml
 # 2. Revisar arquivo 'cacd_feedback.md' no vault
 # (marcar [x] para aprovar sugestões)
 
-# 3. Aplicar mudanças aprovadas
+# 3. Aplicar mudanças aprovadas  
 cacd-analyzer meu-vault/ -t taxonomia_cacd.yaml -m process
-
-# (Opcional) Aplicar automaticamente sugestões de alta confiança
-#   0.8 indica confiança mínima
-cacd-analyzer meu-vault/ -t taxonomia_cacd.yaml --auto-apply 0.8
 
 # 4. Gerar relatório de estudos
 cacd-analyzer meu-vault/ -t taxonomia_cacd.yaml -m report
@@ -125,7 +121,6 @@ O programa gera tags específicas por área:
 ```bash
 --min-confidence 0.5  # Confiança mínima (0.0-1.0)
 -v                    # Saída verbosa para debug
---auto-apply 0.8      # Aplica sugestões automaticamente (>= confiança)
 --help               # Ajuda completa
 ```
 
