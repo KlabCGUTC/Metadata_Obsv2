@@ -96,6 +96,9 @@ cacd-analyzer vault/ -t taxonomia.yaml --min-confidence 0.5
 
 # Saída verbosa para debugging
 cacd-analyzer vault/ -t taxonomia.yaml -v
+
+# Aplicar automaticamente sugestões acima de 0.8 de confiança
+cacd-analyzer vault/ -t taxonomia.yaml --auto-apply 0.8
 ```
 
 ## 📊 Metadados Gerados

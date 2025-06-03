@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Dict, List, Set, Optional, Tuple, Any
 from dataclasses import dataclass, asdict
 from collections import defaultdict, Counter
+import shutil
 import unicodedata
 
 # Configuração de logging
@@ -378,25 +379,63 @@ class CACDMetadataAnalyzer:
     
     def _suggest_connections(self, note: Note, area: str, subarea: str) -> List[str]:
         """Sugere conexões com outras notas"""
-        connections = []
-        note_words = set(self.taxonomy_analyzer._normalize_text(
-            f"{note.title} {note.content}"
-        ).split())
-        
-        for other_note_id, other_note in self.notes.items():
-            if other_note_id == note.id:
+        scored = []
+        note_words = set(
+            self.taxonomy_analyzer._normalize_text(f"{note.title} {note.content}").split()
+        )
+
+        for other_id, other_note in self.notes.items():
+            if other_id == note.id:
                 continue
-            
-            # Verifica similaridade de área/subárea
-            other_area = other_note.frontmatter.get('area')
-            other_subarea = other_note.frontmatter.get('subarea')
-            
-            if other_area == area or other_subarea == subarea:
-                connections.append(other_note.title)
-                if len(connections) >= self.config['conexoes_max']:
-                    break
-        
-        return connections
+
+            other_words = set(
+                self.taxonomy_analyzer._normalize_text(
+                    f"{other_note.title} {other_note.content}"
+                ).split()
+            )
+
+            common = note_words.intersection(other_words)
+            score = len(common)
+
+            if other_note.frontmatter.get("area") == area:
+                score += 2
+            if other_note.frontmatter.get("subarea") == subarea:
+                score += 1
+
+            if score > 0:
+                scored.append((score, other_note.title))
+
+        scored.sort(reverse=True)
+        return [title for _, title in scored[: self.config["conexoes_max"]]]
+
+    def auto_apply_metadata(self, confidence_threshold: float) -> int:
+        """Aplica metadados automaticamente quando a confiança é alta."""
+        applied = 0
+        for note in self.notes.values():
+            if self._has_complete_metadata(note):
+                continue
+
+            suggestion = self.analyze_note(note)
+            if suggestion.confidence >= confidence_threshold:
+                changes = {}
+                if suggestion.area:
+                    changes["area"] = suggestion.area
+                if suggestion.subarea:
+                    changes["subarea"] = suggestion.subarea
+                if suggestion.topico:
+                    changes["topico"] = suggestion.topico
+                if suggestion.tags:
+                    changes["tags"] = suggestion.tags[: self.config["max_tags"]]
+                if suggestion.relevancia_cacd:
+                    changes["relevancia_cacd"] = suggestion.relevancia_cacd
+                if suggestion.conexoes:
+                    changes["conexoes"] = suggestion.conexoes
+
+                if changes and self._apply_metadata_changes(note, changes):
+                    applied += 1
+
+        logger.info(f"Metadados aplicados automaticamente em {applied} notas")
+        return applied
     
     def generate_feedback_file(self) -> bool:
         """Gera arquivo de feedback para revisão manual"""
@@ -548,13 +587,12 @@ class CACDMetadataAnalyzer:
         """Aplica mudanças de metadados a uma nota"""
         try:
             file_path = Path(note.file_path)
-            
+
             # Backup se configurado
             if self.config['backup_original']:
                 backup_path = file_path.with_suffix('.bak')
                 if not backup_path.exists():
-                    file_path.rename(backup_path)
-                    file_path = backup_path.with_suffix('.md')
+                    shutil.copy(file_path, backup_path)
             
             # Lê conteúdo atual
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -682,8 +720,15 @@ def main():
     parser.add_argument("-m", "--mode", choices=["analyze", "feedback", "process", "report"], 
                        default="analyze", help="Modo de operação")
     parser.add_argument("-v", "--verbose", action="store_true", help="Saída verbosa")
-    parser.add_argument("--min-confidence", type=float, default=0.3, 
+    parser.add_argument("--min-confidence", type=float, default=0.3,
                        help="Confiança mínima para sugestões")
+    parser.add_argument(
+        "--auto-apply",
+        type=float,
+        default=0.0,
+        metavar="THRESHOLD",
+        help="Aplica sugestões automaticamente se confiança >= THRESHOLD",
+    )
     
     args = parser.parse_args()
     
@@ -714,11 +759,14 @@ def main():
     
     # Inicializa analisador
     analyzer = CACDMetadataAnalyzer(str(vault_path), str(taxonomy_path), config)
-    
+
     # Executa modo selecionado
     try:
         analyzer.scan_vault()
-        
+
+        if args.auto_apply and args.auto_apply > 0:
+            analyzer.auto_apply_metadata(args.auto_apply)
+
         if args.mode == "analyze":
             logger.info("Executando análise completa...")
             if analyzer.generate_feedback_file():
